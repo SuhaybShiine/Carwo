@@ -1,0 +1,82 @@
+.sidebar {
+  width: 260px;
+  background: #1e1e2f;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 1000;
+  transition: 0.3s;
+  color: #cdd6e0;
+}
+
+.sidebar.collapsed {
+  width: 80px;
+}
+
+.logo {
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.logo i {
+  color: #00d2ff;
+  font-size: 1.7rem;
+}
+
+.logo .gold {
+  color: #00d2ff;
+}
+
+.sidebar.collapsed .logo span {
+  display: none;
+}
+
+.menu {
+  padding: 20px 14px;
+}
+
+.menu a {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 18px;
+  margin-bottom: 8px;
+  color: #8e99b0;
+  text-decoration: none;
+  border-radius: 12px;
+  font-weight: 500;
+  transition: 0.3s;
+}
+
+.menu a i {
+  font-size: 1.2rem;
+  width: 24px;
+  text-align: center;
+}
+
+.menu a:hover {
+  background: rgba(0, 210, 255, 0.12);
+  color: #ffffff;
+}
+
+.menu a.active {
+  background: #00d2ff;
+  color: #1e1e2f;
+  font-weight: 600;
+  box-shadow: 0 4px 20px rgba(0, 210, 255, 0.35);
+}
+
+.sidebar.collapsed .menu a span {
+  display: none;
+}
+
+.sidebar.collapsed .menu a {
+  justify-content: center;
+}

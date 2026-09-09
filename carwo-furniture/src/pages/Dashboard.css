@@ -1,0 +1,473 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+  background: #f5f6fa;
+}
+
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ===== SIDEBAR ===== */
+.sidebar {
+  width: 260px;
+  background: #1e1e2f;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 1000;
+  color: #cdd6e0;
+  transition: width 0.3s ease;
+}
+
+.sidebar.collapsed {
+  width: 80px;
+}
+
+.logo {
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.logo i {
+  color: #00d2ff;
+  font-size: 1.7rem;
+}
+
+.logo .gold {
+  color: #00d2ff;
+}
+
+.sidebar.collapsed .logo span {
+  display: none;
+}
+
+.menu {
+  padding: 20px 14px;
+}
+
+/* ===== DHAMMAAN LINKS - MA DHAQAAQAAN ===== */
+.menu a {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  margin-bottom: 6px;
+  color: #8e99b0;
+  text-decoration: none;
+  border-radius: 12px;
+  font-weight: 500;
+  transition: none !important;
+  transform: none !important;
+}
+
+.menu a i {
+  font-size: 1.2rem;
+  width: 24px;
+  text-align: center;
+}
+
+/* ===== HOME LINK - QURUX BADAN OO MUUQATA (gradient + glow) ===== */
+.menu a.home-link {
+  background: linear-gradient(90deg, rgba(0, 210, 255, 0.18), rgba(0, 210, 255, 0.04)) !important;
+  border-left: 4px solid #00d2ff !important;
+  border-left-color: #00d2ff !important;
+  color: #00d2ff !important;
+  font-weight: 700 !important;
+  /* Wax yar oo if (glow) ah oo ku saabsan border-ka si loo arko */
+  box-shadow: inset 0 0 15px rgba(0, 210, 255, 0.08) !important;
+}
+
+/* HOME - Marka la hover gareeyo ama uu active yahay (buluug buuxa oo if weyn leh) */
+.menu a.home-link:hover,
+.menu a.home-link.active {
+  background: #00d2ff !important;
+  color: #1e1e2f !important;
+  font-weight: 700 !important;
+  /* Shadow weyn oo if (glow) ah si uu u qurux badato */
+  box-shadow: 0 4px 30px rgba(0, 210, 255, 0.55) !important;
+  border-left-color: #ffffff !important; /* border-ka bidix wuxuu noqdaa mid cad marka active/hover ah si uu uga soo baxo */
+  transform: none !important;
+}
+
+/* ===== LINKS-KA KALE - Hover jilicsan oo qurux badan ===== */
+.menu a:not(.home-link):hover {
+  background: rgba(0, 210, 255, 0.10) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* ===== KA SAAR ACTIVE STYLE GUUD SI AYSAN U SAAMEYNIN KUWA KALE ===== */
+.menu a.active:not(.home-link) {
+  background: transparent !important;
+  color: #8e99b0 !important;
+  box-shadow: none !important;
+  font-weight: 500 !important;
+  border-left: none !important;
+}
+
+/* ===== SIDEBAR COLLAPSED ===== */
+.sidebar.collapsed .menu a span {
+  display: none;
+}
+
+.sidebar.collapsed .menu a {
+  justify-content: center;
+}
+
+/* ===== MAIN ===== */
+.main {
+  margin-left: 260px;
+  width: calc(100% - 260px);
+  min-height: 100vh;
+  transition: margin-left 0.3s ease, width 0.3s ease;
+  background: #f5f6fa;
+}
+
+.main.collapsed {
+  margin-left: 80px;
+  width: calc(100% - 80px);
+}
+
+/* ===== HEADER ===== */
+.header {
+  height: 70px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 30px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  border-bottom: 1px solid #e9edf4;
+}
+
+.header .left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header button {
+  border: none;
+  background: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #1e1e2f;
+}
+
+.header h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1e1e2f;
+}
+
+.header .right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.header-icons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: #f1f5f9;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: 0.2s;
+  font-size: 1.15rem;
+  color: #334155;
+}
+
+.icon-btn:hover {
+  background: #e2e8f0;
+  color: #05424f;
+}
+
+.icon-btn .badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #ef4444;
+  color: white;
+  font-size: 0.65rem;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  border: 2px solid white;
+}
+
+.icon-btn.logout {
+  color: #ef4444;
+}
+
+.user {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.user strong {
+  font-size: 0.95rem;
+  color: #1e1e2f;
+}
+
+.user span {
+  font-size: 0.78rem;
+  color: #6b7a8f;
+}
+
+/* ===== DASH BODY ===== */
+.dash-body {
+  padding: 22px 24px 40px;
+}
+
+/* ===== STAT CARDS ===== */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  border-radius: 12px;
+  color: #fff;
+  text-decoration: none;
+  min-height: 100px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+  color: #fff;
+}
+
+.stat-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 1;
+}
+
+.stat-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  opacity: 0.9;
+  text-transform: uppercase;
+}
+
+.stat-value {
+  font-size: 1.85rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.stat-icon {
+  font-size: 2.8rem;
+  opacity: 0.22;
+  z-index: 0;
+}
+
+/* ===== CARD COLORS ===== */
+.sc-employee {
+  background: linear-gradient(135deg, #0f2027, #203a43);
+}
+.sc-customer {
+  background: linear-gradient(135deg, #ff7e5f, #feb47b);
+}
+.sc-supplier {
+  background: linear-gradient(135deg, #654ea3, #eaafc8);
+}
+.sc-product {
+  background: linear-gradient(135deg, #1d976c, #93f9b9);
+}
+.sc-order {
+  background: linear-gradient(135deg, #3a1c71, #d76d77);
+}
+.sc-payment {
+  background: linear-gradient(135deg, #000428, #004e92);
+}
+
+/* ===== PANEL (Recent Orders / Payments) ===== */
+.panel {
+  background: #fff;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 20px;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.06);
+}
+
+.panel-head {
+  background: #0d1b2a;
+  color: #fff;
+  padding: 14px 18px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 3px solid #f0a500;
+}
+
+.panel-head i {
+  margin-right: 8px;
+}
+
+.panel-body {
+  overflow-x: auto;
+}
+
+.empty {
+  text-align: center;
+  padding: 28px;
+  color: #94a3b8;
+  margin: 0;
+}
+
+/* ===== TABLE ===== */
+.dash-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.dash-table thead th {
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.dash-table tbody td {
+  padding: 12px 16px;
+  font-size: 0.9rem;
+  color: #1e293b;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.dash-table tbody tr:nth-child(even) {
+  background: #fafbfc;
+}
+.dash-table tbody tr:hover {
+  background: #f0f7ff;
+}
+
+/* status badges */
+.st-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+}
+.st-wait {
+  background: #f59e0b;
+}
+.st-ok {
+  background: #16a34a;
+}
+.st-bad {
+  background: #dc2626;
+}
+
+/* ===== SIDEBAR USER (hoose) ===== */
+.sidebar-user {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  text-align: center;
+}
+
+.sidebar-user-name {
+  font-weight: 600;
+  color: #f0f4ff;
+}
+.sidebar-user-role {
+  font-size: 0.75rem;
+  color: #8e99b0;
+}
+
+/* ===== LOGOUT BUTTON ===== */
+.menu-logout {
+  margin-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: 16px !important;
+  color: #ef4444 !important;
+}
+
+.menu-logout:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #ef4444 !important;
+  transform: none !important;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 1100px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+  .header h1 {
+    font-size: 0.85rem;
+  }
+  .header .right .user {
+    display: none;
+  }
+  .dash-body {
+    padding: 14px 12px 28px;
+  }
+}
