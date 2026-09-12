@@ -1,17 +1,27 @@
 const db = require('../config/db');
 
-// GET all orders (header + item count + latest state)
+// GET all orders
 exports.getAllOrders = async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT
         o.*,
         c.C_Name,
+        e.E_Name,
         (SELECT COUNT(*) FROM Order_Items oi WHERE oi.O_id = o.O_id) AS item_count,
         (SELECT GROUP_CONCAT(p.P_item SEPARATOR ', ')
          FROM Order_Items oi
          JOIN Product p ON oi.P_id = p.P_id
          WHERE oi.O_id = o.O_id) AS item_names,
+        (SELECT GROUP_CONCAT(
+            DISTINCT NULLIF(TRIM(oi.O_color), '')
+            SEPARATOR ', '
+         )
+         FROM Order_Items oi
+         WHERE oi.O_id = o.O_id) AS item_colors,
+        (SELECT COALESCE(SUM(oi.O_quantity), 0)
+         FROM Order_Items oi
+         WHERE oi.O_id = o.O_id) AS total_qty,
         (SELECT os.state_name
          FROM Order_State os
          WHERE os.Order_id = o.O_id
@@ -19,6 +29,7 @@ exports.getAllOrders = async (req, res) => {
          LIMIT 1) AS latest_state
       FROM Orders o
       LEFT JOIN Customer c ON o.C_id = c.C_id
+      LEFT JOIN Employee e ON o.E_id = e.E_id
       ORDER BY o.O_id DESC
     `);
     res.json(rows);
@@ -28,13 +39,14 @@ exports.getAllOrders = async (req, res) => {
   }
 };
 
-// GET one order (header + all its items + latest state)
+// GET one order
 exports.getOrderById = async (req, res) => {
   try {
     const [orderRows] = await db.query(
       `SELECT
         o.*,
         c.C_Name,
+        e.E_Name,
         (SELECT os.state_name
          FROM Order_State os
          WHERE os.Order_id = o.O_id
@@ -42,6 +54,7 @@ exports.getOrderById = async (req, res) => {
          LIMIT 1) AS latest_state
        FROM Orders o
        LEFT JOIN Customer c ON o.C_id = c.C_id
+       LEFT JOIN Employee e ON o.E_id = e.E_id
        WHERE o.O_id = ?`,
       [req.params.id]
     );
@@ -65,26 +78,28 @@ exports.getOrderById = async (req, res) => {
   }
 };
 
-// CREATE order — header + multiple items, oo Product stock-ga laga jaraa
+// CREATE order
 exports.createOrder = async (req, res) => {
   const connection = await db.getConnection();
   try {
-    const { C_id, O_date, O_AppointmentDate, items } = req.body;
+    const { C_id, E_id, O_date, O_AppointmentDate, items } = req.body;
 
     if (!C_id) {
       return res.status(400).json({ message: 'Customer is required' });
+    }
+    if (!E_id) {
+      return res.status(400).json({ message: 'Employee is required' });
     }
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'At least one order item is required' });
     }
 
-    // Isugee qty-ga haddii isla product-ku dhowr jeer ku jiro items-ka
     const requestedQtyByProduct = {};
     for (const it of items) {
       if (!it.P_id) {
         return res.status(400).json({ message: 'Each item must have a product selected' });
       }
-      const qty = parseInt(it.O_quantity) || 0;
+      const qty = parseInt(it.O_quantity, 10) || 0;
       if (qty <= 0) {
         return res.status(400).json({ message: 'Quantity must be greater than 0' });
       }
@@ -93,7 +108,6 @@ exports.createOrder = async (req, res) => {
 
     await connection.beginTransaction();
 
-    // Hubi stock-ga Product kasta (FOR UPDATE = lock, si labo order isku mar socda aysan iska qasin)
     const stockByProduct = {};
     for (const P_id of Object.keys(requestedQtyByProduct)) {
       const [[product]] = await connection.query(
@@ -117,7 +131,7 @@ exports.createOrder = async (req, res) => {
     }
 
     const preparedItems = items.map((it) => {
-      const quantity = parseInt(it.O_quantity) || 0;
+      const quantity = parseInt(it.O_quantity, 10) || 0;
       const price = parseFloat(it.O_price) || 0;
       const discount = parseFloat(it.O_Discount) || 0;
       const subtotal = quantity * price * (1 - discount / 100);
@@ -135,8 +149,9 @@ exports.createOrder = async (req, res) => {
     const orderDate = O_date || new Date().toISOString().slice(0, 10);
 
     const [orderResult] = await connection.query(
-      `INSERT INTO Orders (C_id, O_date, O_AppointmentDate, O_Total) VALUES (?, ?, ?, ?)`,
-      [C_id, orderDate, O_AppointmentDate || null, grandTotal]
+      `INSERT INTO Orders (C_id, E_id, O_date, O_AppointmentDate, O_Total)
+       VALUES (?, ?, ?, ?, ?)`,
+      [C_id, E_id, orderDate, O_AppointmentDate || null, grandTotal]
     );
 
     const newOrderId = orderResult.insertId;
@@ -149,7 +164,6 @@ exports.createOrder = async (req, res) => {
       );
     }
 
-    // Ka jar stock-ga Product-ka, oo dib u xisaabi P_total (Qty cusub × Price)
     for (const P_id of Object.keys(requestedQtyByProduct)) {
       const newQty = stockByProduct[P_id].P_quantity - requestedQtyByProduct[P_id];
       await connection.query(
@@ -168,18 +182,24 @@ exports.createOrder = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Create Order Error:', error);
-    res.status(500).json({ message: 'Error creating order' });
+    res.status(500).json({ message: error.message || 'Error creating order' });
   } finally {
     connection.release();
   }
 };
 
-// UPDATE order — items-kii hore stock-ga waa loo celiyaa, kadibna items-ka cusub isla hubinta ayaa lagu sameeyaa
+// UPDATE order
 exports.updateOrder = async (req, res) => {
   const connection = await db.getConnection();
   try {
-    const { C_id, O_date, O_AppointmentDate, items } = req.body;
+    const { C_id, E_id, O_date, O_AppointmentDate, items } = req.body;
 
+    if (!C_id) {
+      return res.status(400).json({ message: 'Customer is required' });
+    }
+    if (!E_id) {
+      return res.status(400).json({ message: 'Employee is required' });
+    }
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'At least one order item is required' });
     }
@@ -189,7 +209,7 @@ exports.updateOrder = async (req, res) => {
       if (!it.P_id) {
         return res.status(400).json({ message: 'Each item must have a product selected' });
       }
-      const qty = parseInt(it.O_quantity) || 0;
+      const qty = parseInt(it.O_quantity, 10) || 0;
       if (qty <= 0) {
         return res.status(400).json({ message: 'Quantity must be greater than 0' });
       }
@@ -198,7 +218,6 @@ exports.updateOrder = async (req, res) => {
 
     await connection.beginTransaction();
 
-    // 1) Soo qaad items-kii hore ee order-kan, stock-gooda soo celi
     const [oldItems] = await connection.query(
       'SELECT P_id, O_quantity FROM Order_Items WHERE O_id = ?',
       [req.params.id]
@@ -211,7 +230,6 @@ exports.updateOrder = async (req, res) => {
       );
     }
 
-    // 2) Hubi stock-ga cusub (kaddib markii kii hore la soo celiyay) oo lock gareey
     const stockByProduct = {};
     for (const P_id of Object.keys(requestedQtyByProduct)) {
       const [[product]] = await connection.query(
@@ -235,7 +253,7 @@ exports.updateOrder = async (req, res) => {
     }
 
     const preparedItems = items.map((it) => {
-      const quantity = parseInt(it.O_quantity) || 0;
+      const quantity = parseInt(it.O_quantity, 10) || 0;
       const price = parseFloat(it.O_price) || 0;
       const discount = parseFloat(it.O_Discount) || 0;
       const subtotal = quantity * price * (1 - discount / 100);
@@ -252,8 +270,10 @@ exports.updateOrder = async (req, res) => {
     const grandTotal = preparedItems.reduce((sum, it) => sum + it.O_Subtotal, 0);
 
     const [result] = await connection.query(
-      `UPDATE Orders SET C_id = ?, O_date = ?, O_AppointmentDate = ?, O_Total = ? WHERE O_id = ?`,
-      [C_id, O_date, O_AppointmentDate || null, grandTotal, req.params.id]
+      `UPDATE Orders
+       SET C_id = ?, E_id = ?, O_date = ?, O_AppointmentDate = ?, O_Total = ?
+       WHERE O_id = ?`,
+      [C_id, E_id, O_date, O_AppointmentDate || null, grandTotal, req.params.id]
     );
 
     if (result.affectedRows === 0) {
@@ -271,7 +291,6 @@ exports.updateOrder = async (req, res) => {
       );
     }
 
-    // Ka jar stock-ga cusub, dib u xisaabi P_total
     for (const P_id of Object.keys(requestedQtyByProduct)) {
       const newQty = stockByProduct[P_id].P_quantity - requestedQtyByProduct[P_id];
       await connection.query(
@@ -285,13 +304,13 @@ exports.updateOrder = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Update Order Error:', error);
-    res.status(500).json({ message: 'Error updating order' });
+    res.status(500).json({ message: error.message || 'Error updating order' });
   } finally {
     connection.release();
   }
 };
 
-// DELETE order — stock-ga items-ka waa loo celiyaa Product-ka ka hor intii order-ku la tirtirin
+// DELETE order
 exports.deleteOrder = async (req, res) => {
   const connection = await db.getConnection();
   try {
@@ -316,7 +335,10 @@ exports.deleteOrder = async (req, res) => {
       }
     }
 
-    const [result] = await connection.query('DELETE FROM Orders WHERE O_id = ?', [req.params.id]);
+    const [result] = await connection.query(
+      'DELETE FROM Orders WHERE O_id = ?',
+      [req.params.id]
+    );
 
     if (result.affectedRows === 0) {
       await connection.rollback();

@@ -6,7 +6,11 @@ exports.getAllPayments = async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT 
-        p.*, c.C_Name, o.O_AppointmentDate, o.O_Total,
+        p.*,
+        c.C_Name,
+        e.E_Name,
+        o.O_AppointmentDate,
+        o.O_Total,
         (SELECT GROUP_CONCAT(CONCAT(pr.P_item, ' x', oi.O_quantity) SEPARATOR ', ') 
          FROM Order_Items oi 
          JOIN Product pr ON oi.P_id = pr.P_id 
@@ -14,6 +18,7 @@ exports.getAllPayments = async (req, res) => {
       FROM Payments p
       LEFT JOIN Orders o ON p.order_id = o.O_id
       LEFT JOIN Customer c ON o.C_id = c.C_id
+      LEFT JOIN Employee e ON o.E_id = e.E_id
       ORDER BY p.payment_id DESC
     `);
 
@@ -25,21 +30,78 @@ exports.getAllPayments = async (req, res) => {
 
     res.json(result);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: error.message });
   }
 };
 
-// 2. GET ORDERS FOR DROPDOWN (kaliya remaining > 0)
+// 2. GET ONE PAYMENT (Receipt)
+exports.getPaymentById = async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT 
+        p.*,
+        c.C_Name,
+        e.E_Name,
+        o.O_AppointmentDate,
+        o.O_Total,
+        o.O_id,
+        (SELECT GROUP_CONCAT(
+           CONCAT(pr.P_item, ':', oi.O_quantity, ':', oi.O_price)
+           SEPARATOR ';'
+         )
+         FROM Order_Items oi
+         JOIN Product pr ON oi.P_id = pr.P_id
+         WHERE oi.O_id = o.O_id
+        ) AS items_raw,
+        (SELECT GROUP_CONCAT(CONCAT(pr.P_item, ' x', oi.O_quantity) SEPARATOR ', ')
+         FROM Order_Items oi
+         JOIN Product pr ON oi.P_id = pr.P_id
+         WHERE oi.O_id = o.O_id
+        ) AS items_with_qty
+      FROM Payments p
+      LEFT JOIN Orders o ON p.order_id = o.O_id
+      LEFT JOIN Customer c ON o.C_id = c.C_id
+      LEFT JOIN Employee e ON o.E_id = e.E_id
+      WHERE p.payment_id = ?
+      `,
+      [req.params.id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Payment not found' });
+    }
+
+    const row = rows[0];
+    res.json({
+      ...row,
+      amount_sos: (Number(row.amount || 0) * EXCHANGE_RATE).toLocaleString(),
+      balance_sos: (Number(row.payment_balance || 0) * EXCHANGE_RATE).toLocaleString(),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// 3. GET ORDERS FOR DROPDOWN (remaining > 0 only)
 exports.getOrdersForPayment = async (req, res) => {
   try {
     const [orders] = await db.query(`
-      SELECT o.O_id, o.O_Total, o.O_AppointmentDate, c.C_Name,
+      SELECT 
+        o.O_id,
+        o.O_Total,
+        o.O_AppointmentDate,
+        c.C_Name,
+        e.E_Name,
         (SELECT GROUP_CONCAT(pr.P_item SEPARATOR ', ') 
          FROM Order_Items oi 
          JOIN Product pr ON oi.P_id = pr.P_id 
          WHERE oi.O_id = o.O_id) AS O_item
       FROM Orders o
       LEFT JOIN Customer c ON o.C_id = c.C_id
+      LEFT JOIN Employee e ON o.E_id = e.E_id
       ORDER BY o.O_id DESC
     `);
 
@@ -55,13 +117,13 @@ exports.getOrdersForPayment = async (req, res) => {
       const orderTotal = Number(o.O_Total) || 0;
       const remaining = orderTotal - totalPaid;
 
-      // HA soo bandhigin orders dhammaaday (PAID)
       if (remaining <= 0.01) continue;
 
       result.push({
         O_id: o.O_id,
         O_item: o.O_item || 'No Item',
         C_Name: o.C_Name || 'No Name',
+        E_Name: o.E_Name || null,
         O_Total: orderTotal,
         O_AppointmentDate: o.O_AppointmentDate,
         total_paid: totalPaid,
@@ -71,11 +133,12 @@ exports.getOrdersForPayment = async (req, res) => {
 
     res.json(result);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: error.message });
   }
 };
 
-// 3. GET SALES REPORT
+// 4. GET SALES REPORT
 exports.getSalesReport = async (req, res) => {
   try {
     const { filterType } = req.query;
@@ -93,21 +156,23 @@ exports.getSalesReport = async (req, res) => {
     }
 
     const [rows] = await db.query(`
-      SELECT p.*, c.C_Name, o.O_Total
+      SELECT p.*, c.C_Name, e.E_Name, o.O_Total
       FROM Payments p
       LEFT JOIN Orders o ON p.order_id = o.O_id
       LEFT JOIN Customer c ON o.C_id = c.C_id
+      LEFT JOIN Employee e ON o.E_id = e.E_id
       ${condition}
       ORDER BY p.payment_date DESC
     `);
 
     res.json(rows);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: error.message });
   }
 };
 
-// 4. CREATE PAYMENT (diid haddii PAID)
+// 5. CREATE PAYMENT
 exports.createPayment = async (req, res) => {
   try {
     const { order_id, amount, payment_method, payment_date } = req.body;
@@ -169,11 +234,12 @@ exports.createPayment = async (req, res) => {
       payment_balance,
     });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: error.message });
   }
 };
 
-// 5. UPDATE PAYMENT
+// 6. UPDATE PAYMENT
 exports.updatePayment = async (req, res) => {
   try {
     const { amount, payment_method, payment_date } = req.body;
@@ -211,7 +277,6 @@ exports.updatePayment = async (req, res) => {
 
     const orderTotal = Number(orderRows[0].O_Total) || 0;
 
-    // lacagaha kale (ka reeb payment-kan)
     const [paidRows] = await db.query(
       `SELECT COALESCE(SUM(amount), 0) AS total_paid
        FROM Payments
@@ -248,11 +313,12 @@ exports.updatePayment = async (req, res) => {
 
     res.json({ message: 'Payment updated successfully', payment_balance });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: error.message });
   }
 };
 
-// 6. PAY BALANCE
+// 7. PAY BALANCE
 exports.payBalance = async (req, res) => {
   try {
     const { amount_paid, payment_method } = req.body;
@@ -293,49 +359,32 @@ exports.payBalance = async (req, res) => {
     const newBalance = Math.max(0, balance - payAmount);
 
     await db.query(
-      `UPDATE Payments SET amount = ?, payment_balance = ?, payment_method = ?
+      `UPDATE Payments SET
+        amount = ?,
+        payment_balance = ?,
+        payment_method = ?,
+        payment_date = ?
        WHERE payment_id = ?`,
-      [newAmount, newBalance, payment_method, req.params.id]
+      [
+        newAmount,
+        newBalance,
+        payment_method,
+        new Date().toISOString().slice(0, 10),
+        req.params.id,
+      ]
     );
 
     res.json({
-      message: 'Balance Updated',
-      newBalance,
+      message: 'Balance payment recorded successfully',
+      payment_balance: newBalance,
     });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: error.message });
   }
 };
 
-// 7. GET BY ID
-exports.getPaymentById = async (req, res) => {
-  try {
-    const [rows] = await db.query(
-      `
-      SELECT p.*, c.C_Name, o.O_Total, o.O_AppointmentDate,
-        (SELECT GROUP_CONCAT(CONCAT(pr.P_item, ':', oi.O_quantity, ':', oi.O_price) SEPARATOR ';') 
-         FROM Order_Items oi 
-         JOIN Product pr ON oi.P_id = pr.P_id 
-         WHERE oi.O_id = p.order_id) AS items_raw
-      FROM Payments p 
-      LEFT JOIN Orders o ON p.order_id = o.O_id 
-      LEFT JOIN Customer c ON o.C_id = c.C_id
-      WHERE p.payment_id = ?
-      `,
-      [req.params.id]
-    );
-
-    if (rows.length === 0) {
-      return res.status(404).json({ message: 'Payment not found' });
-    }
-
-    res.json(rows[0]);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// 8. DELETE
+// 8. DELETE PAYMENT
 exports.deletePayment = async (req, res) => {
   try {
     const [result] = await db.query(
@@ -347,8 +396,9 @@ exports.deletePayment = async (req, res) => {
       return res.status(404).json({ message: 'Payment not found' });
     }
 
-    res.json({ message: 'Deleted successfully' });
+    res.json({ message: 'Payment deleted successfully' });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: error.message });
   }
 };

@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import orderService from '../../services/orderService';
 import customerService from '../../services/customerService';
 import productService from '../../services/productService';
+import employeeService from '../../services/employeeService';
 import Sidebar from '../../components/Sidebar';
 import '../Employee/Employee.css';
 
@@ -14,15 +15,23 @@ const emptyItem = () => ({
   O_Discount: 0,
 });
 
+const pickList = (res) => {
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res?.data)) return res.data;
+  return [];
+};
+
 function OrderAdd() {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [customers, setCustomers] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [products, setProducts] = useState([]);
 
   const [C_id, setC_id] = useState('');
+  const [E_id, setE_id] = useState('');
   const [O_date, setO_date] = useState(new Date().toISOString().slice(0, 10));
   const [O_AppointmentDate, setO_AppointmentDate] = useState('');
   const [items, setItems] = useState([emptyItem()]);
@@ -30,12 +39,14 @@ function OrderAdd() {
   useEffect(() => {
     const loadOptions = async () => {
       try {
-        const [customerRes, productRes] = await Promise.all([
+        const [customerRes, productRes, employeeRes] = await Promise.all([
           customerService.getAll(),
           productService.getAll(),
+          employeeService.getAll(),
         ]);
-        setCustomers(customerRes.data);
-        setProducts(productRes.data);
+        setCustomers(pickList(customerRes));
+        setProducts(pickList(productRes));
+        setEmployees(pickList(employeeRes));
       } catch (err) {
         console.error('Error loading dropdown data:', err);
       }
@@ -51,14 +62,12 @@ function OrderAdd() {
   const handleItemChange = (index, field, value) => {
     const updated = [...items];
     updated[index] = { ...updated[index], [field]: value };
-
     if (field === 'P_id') {
       const selectedProduct = products.find((p) => String(p.P_id) === String(value));
       if (selectedProduct && selectedProduct.P_price) {
         updated[index].O_price = selectedProduct.P_price;
       }
     }
-
     setItems(updated);
     if (error) setError('');
   };
@@ -81,23 +90,25 @@ function OrderAdd() {
 
   const validate = () => {
     if (!C_id) return 'Customer is required';
+    if (!E_id) return 'Employee is required';
     if (!O_date) return 'Order date is required';
 
-    // Isugee qty-ga isla product-ku haddii dhowr jeer ku jiro items-ka
     const qtyByProduct = {};
-
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       if (!it.P_id) return `Item ${i + 1}: please select a product`;
-      if (!it.O_quantity || parseInt(it.O_quantity) <= 0) return `Item ${i + 1}: quantity must be greater than 0`;
-      if (it.O_price === '' || parseFloat(it.O_price) < 0) return `Item ${i + 1}: a valid price is required`;
+      if (!it.O_quantity || parseInt(it.O_quantity, 10) <= 0)
+        return `Item ${i + 1}: quantity must be greater than 0`;
+      if (it.O_price === '' || parseFloat(it.O_price) < 0)
+        return `Item ${i + 1}: a valid price is required`;
 
-      qtyByProduct[it.P_id] = (qtyByProduct[it.P_id] || 0) + parseInt(it.O_quantity);
+      qtyByProduct[it.P_id] =
+        (qtyByProduct[it.P_id] || 0) + parseInt(it.O_quantity, 10);
 
       const stock = getStock(it.P_id);
       if (stock !== null && qtyByProduct[it.P_id] > stock) {
         const name = products.find((p) => String(p.P_id) === String(it.P_id))?.P_item;
-        return `"${name}" — waxaad dalbanaysaa ${qtyByProduct[it.P_id]}, laakiin kaliya ${stock} ayaa jira stock-ka`;
+        return `"${name}" — requested ${qtyByProduct[it.P_id]}, only ${stock} in stock`;
       }
     }
     return '';
@@ -112,10 +123,10 @@ function OrderAdd() {
     }
     setError('');
     setLoading(true);
-
     try {
       await orderService.create({
         C_id,
+        E_id,
         O_date,
         O_AppointmentDate: O_AppointmentDate || null,
         items: items.map((it) => ({
@@ -130,7 +141,6 @@ function OrderAdd() {
       navigate('/order');
     } catch (err) {
       console.error('Add Order Error:', err);
-      // Server-side stock error (source of truth) — muuji haddii uu soo baxo
       setError(err.response?.data?.message || 'Error creating order. Please try again.');
     } finally {
       setLoading(false);
@@ -140,11 +150,10 @@ function OrderAdd() {
   return (
     <div className="layout">
       <Sidebar collapsed={collapsed} />
-
       <div className={`main ${collapsed ? 'collapsed' : ''}`}>
         <header className="header">
           <div className="left">
-            <button onClick={() => setCollapsed(!collapsed)}>
+            <button type="button" onClick={() => setCollapsed(!collapsed)}>
               <i className="bi bi-list"></i>
             </button>
             <h1>Add Order</h1>
@@ -160,14 +169,22 @@ function OrderAdd() {
           <div className="form-card">
             <form onSubmit={handleSubmit}>
               {error && (
-                <div style={{ background: '#fed7d7', color: '#c53030', padding: '10px 14px', borderRadius: '8px', marginBottom: '16px' }}>
+                <div
+                  style={{
+                    background: '#fed7d7',
+                    color: '#c53030',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    marginBottom: '16px',
+                  }}
+                >
                   {error}
                 </div>
               )}
 
               <div className="form-grid">
                 <div className="form-group">
-                  <label>Customer </label>
+                  <label>Customer *</label>
                   <select value={C_id} onChange={(e) => setC_id(e.target.value)}>
                     <option value="">Select Customer</option>
                     {customers.map((c) => (
@@ -179,8 +196,24 @@ function OrderAdd() {
                 </div>
 
                 <div className="form-group">
-                  <label>Order Date </label>
-                  <input type="date" value={O_date} onChange={(e) => setO_date(e.target.value)} />
+                  <label>Employee *</label>
+                  <select value={E_id} onChange={(e) => setE_id(e.target.value)}>
+                    <option value="">Select Employee</option>
+                    {employees.map((emp) => (
+                      <option key={emp.E_id} value={emp.E_id}>
+                        {emp.E_Name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Order Date *</label>
+                  <input
+                    type="date"
+                    value={O_date}
+                    onChange={(e) => setO_date(e.target.value)}
+                  />
                 </div>
 
                 <div className="form-group">
@@ -195,7 +228,14 @@ function OrderAdd() {
 
               <hr style={{ margin: '20px 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '12px',
+                }}
+              >
                 <h3 style={{ margin: 0, fontSize: '1.05rem' }}>Order Items</h3>
                 <button
                   type="button"
@@ -220,13 +260,19 @@ function OrderAdd() {
                       background: '#fafafa',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '12px',
+                      }}
+                    >
                       <strong style={{ color: '#4a5568' }}>Item {index + 1}</strong>
                       <button
                         type="button"
                         onClick={() => removeItemRow(index)}
                         className="btn-delete"
-                        title="Remove item"
                         disabled={items.length === 1}
                       >
                         <i className="bi bi-trash"></i> Remove
@@ -235,14 +281,18 @@ function OrderAdd() {
 
                     <div className="form-grid">
                       <div className="form-group">
-                        <label>Product </label>
+                        <label>Product *</label>
                         <select
                           value={item.P_id}
                           onChange={(e) => handleItemChange(index, 'P_id', e.target.value)}
                         >
                           <option value="">Select Product</option>
                           {products.map((p) => (
-                            <option key={p.P_id} value={p.P_id} disabled={Number(p.P_quantity) <= 0}>
+                            <option
+                              key={p.P_id}
+                              value={p.P_id}
+                              disabled={Number(p.P_quantity) <= 0}
+                            >
                               {p.P_item} — Stock: {p.P_quantity}
                               {Number(p.P_quantity) <= 0 ? ' (Out of stock)' : ''}
                             </option>
@@ -264,18 +314,20 @@ function OrderAdd() {
                       </div>
 
                       <div className="form-group">
-                        <label>Quantity </label>
+                        <label>Quantity *</label>
                         <input
                           type="number"
                           min="1"
                           max={stock !== null ? stock : undefined}
                           value={item.O_quantity}
-                          onChange={(e) => handleItemChange(index, 'O_quantity', e.target.value)}
+                          onChange={(e) =>
+                            handleItemChange(index, 'O_quantity', e.target.value)
+                          }
                         />
                       </div>
 
                       <div className="form-group">
-                        <label>Price ($) </label>
+                        <label>Price ($) *</label>
                         <input
                           type="number"
                           min="0"
@@ -293,7 +345,9 @@ function OrderAdd() {
                           max="100"
                           step="0.01"
                           value={item.O_Discount}
-                          onChange={(e) => handleItemChange(index, 'O_Discount', e.target.value)}
+                          onChange={(e) =>
+                            handleItemChange(index, 'O_Discount', e.target.value)
+                          }
                         />
                       </div>
 
@@ -303,7 +357,11 @@ function OrderAdd() {
                           type="text"
                           value={`$${itemSubtotal(item).toFixed(2)}`}
                           disabled
-                          style={{ background: '#eef2f7', fontWeight: 'bold', color: '#2d3748' }}
+                          style={{
+                            background: '#eef2f7',
+                            fontWeight: 'bold',
+                            color: '#2d3748',
+                          }}
                         />
                       </div>
                     </div>
@@ -328,7 +386,9 @@ function OrderAdd() {
                 <button type="submit" className="btn-save" disabled={loading}>
                   {loading ? 'Saving...' : 'Save Order'}
                 </button>
-                <Link to="/order" className="btn-cancel">Cancel</Link>
+                <Link to="/order" className="btn-cancel">
+                  Cancel
+                </Link>
               </div>
             </form>
           </div>
