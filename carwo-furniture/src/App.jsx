@@ -53,11 +53,11 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Public */}
+        {/* ========== PUBLIC ========== */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
 
-        {/* Dashboard */}
+        {/* ========== DASHBOARD ========== */}
         <Route
           path="/"
           element={
@@ -75,7 +75,7 @@ function App() {
           }
         />
 
-        {/* Customer */}
+        {/* ========== CUSTOMER ========== */}
         <Route
           path="/customer"
           element={
@@ -101,7 +101,7 @@ function App() {
           }
         />
 
-        {/* Product */}
+        {/* ========== PRODUCT ========== */}
         <Route
           path="/product"
           element={
@@ -127,7 +127,7 @@ function App() {
           }
         />
 
-        {/* Order */}
+        {/* ========== ORDER ========== */}
         <Route
           path="/order"
           element={
@@ -177,7 +177,7 @@ function App() {
           }
         />
 
-        {/* Fabric Inventory */}
+        {/* ========== FABRIC INVENTORY ========== */}
         <Route
           path="/fabric-inventory"
           element={
@@ -203,7 +203,7 @@ function App() {
           }
         />
 
-        {/* Payment */}
+        {/* ========== PAYMENT ========== */}
         <Route
           path="/payment"
           element={
@@ -245,7 +245,7 @@ function App() {
           }
         />
 
-        {/* Employee — Admin */}
+        {/* ========== EMPLOYEE — Admin ========== */}
         <Route
           path="/employee"
           element={
@@ -271,7 +271,7 @@ function App() {
           }
         />
 
-        {/* Supplier — Admin */}
+        {/* ========== SUPPLIER — Admin ========== */}
         <Route
           path="/supplier"
           element={
@@ -297,7 +297,7 @@ function App() {
           }
         />
 
-        {/* Expense — Admin */}
+        {/* ========== EXPENSE — Admin ========== */}
         <Route
           path="/expense"
           element={
@@ -331,7 +331,7 @@ function App() {
           }
         />
 
-        {/* System Report — Admin */}
+        {/* ========== SYSTEM REPORT — Admin ========== */}
         <Route
           path="/system-report"
           element={
@@ -341,7 +341,7 @@ function App() {
           }
         />
 
-        {/* Users — Admin */}
+        {/* ========== USERS — Admin ========== */}
         <Route
           path="/users"
           element={
@@ -359,6 +359,7 @@ function App() {
           }
         />
 
+        {/* Unknown URL → home (ProtectedRoute → login haddii aan la gelin) */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
