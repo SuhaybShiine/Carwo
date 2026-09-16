@@ -9,12 +9,11 @@ function Sidebar({ collapsed }) {
   const isAdmin = authService.isAdmin();
   const user = authService.getUser();
 
-  // Kaliya Home link-ka ayaa isticmaalaya isActive
   const isActive = (path) => {
     if (path === '/') {
       return location.pathname === '/' || location.pathname === '/dashboard';
     }
-    return false; // links-ka kale ma helaan active
+    return false;
   };
 
   const handleLogout = () => {
@@ -34,11 +33,7 @@ function Sidebar({ collapsed }) {
       </div>
 
       <nav className="menu">
-        {/* HOME — kaliya kan ayaa heli doona class 'active' */}
-        <Link
-          to="/"
-          className={`home-link ${isActive('/') ? 'active' : ''}`}
-        >
+        <Link to="/" className={`home-link ${isActive('/') ? 'active' : ''}`}>
           <i className="bi bi-speedometer2"></i>
           {!collapsed && <span>Home</span>}
         </Link>
@@ -70,6 +65,12 @@ function Sidebar({ collapsed }) {
         <Link to="/order">
           <i className="bi bi-cart-check"></i>
           {!collapsed && <span>Orders</span>}
+        </Link>
+
+        {/* Fabric Inventory — Admin + User */}
+        <Link to="/fabric-inventory">
+          <i className="bi bi-palette"></i>
+          {!collapsed && <span>Fabric Inventory</span>}
         </Link>
 
         <Link to="/payment">
