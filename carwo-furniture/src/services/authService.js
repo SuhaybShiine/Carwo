@@ -2,107 +2,106 @@ import axios from 'axios';
 
 const API_URL = 'http://localhost:5000/api/auth';
 
-const TOKEN_KEY = 'carwo_token';
-const USER_KEY = 'carwo_user';
-
 const authService = {
-  // ---------- LOGIN ----------
-  login: async (username, password) => {
-    const res = await axios.post(`${API_URL}/login`, {
-      Username: username,
-      Password: password,
-    });
-
-    const data = res.data;
-
-    // Support different backend shapes
-    const token = data.token || data.Token || data.accessToken;
-    const user = data.user || data.User || {
-      User_id: data.User_id,
-      Username: data.Username,
-      Full_Name: data.Full_Name,
-      Email: data.Email,
-      Role: data.Role,
-    };
-
-    if (token) {
-      sessionStorage.setItem(TOKEN_KEY, token);
-      sessionStorage.setItem(USER_KEY, JSON.stringify(user));
-    }
-
-    return data;
-  },
-
-  // ---------- REGISTER ----------
-  register: async (formData) => {
-    const res = await axios.post(`${API_URL}/register`, formData);
+  // ===== REGISTER =====
+  register: async (data) => {
+    const res = await axios.post(`${API_URL}/register`, data);
     return res.data;
   },
 
-  // ---------- LOGOUT ----------
-  logout: () => {
-    sessionStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(USER_KEY);
-  },
-
-  // ---------- TOKEN / USER ----------
-  getToken: () => sessionStorage.getItem(TOKEN_KEY),
-
-  getUser: () => {
-    try {
-      const raw = sessionStorage.getItem(USER_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
+  // ===== LOGIN =====
+  login: async (data) => {
+    const res = await axios.post(`${API_URL}/login`, data);
+    if (res.data.token) {
+      localStorage.setItem('token', res.data.token);
+      localStorage.setItem('user', JSON.stringify(res.data.user));
     }
+    return res.data;
   },
 
-  isLoggedIn: () => {
-    return !!sessionStorage.getItem(TOKEN_KEY);
+  // ===== LOGOUT =====
+  logout: () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
   },
+
+  // ===== USER-KA HADDA =====
+  getUser: () => {
+    const user = localStorage.getItem('user');
+    return user ? JSON.parse(user) : null;
+  },
+
+  getToken: () => localStorage.getItem('token'),
+
+  // ⭐ LABADA magac mid kasta wuu shaqeeyaa
+  isAuthenticated: () => !!localStorage.getItem('token'),
+  isLoggedIn: () => !!localStorage.getItem('token'),
 
   isAdmin: () => {
     const user = authService.getUser();
-    if (!user) return false;
-    return String(user.Role || '').toLowerCase() === 'admin';
+    return user?.Role === 'admin';
   },
 
-  // Headers for protected API calls
-  authHeader: () => {
-    const token = sessionStorage.getItem(TOKEN_KEY);
-    return token ? { Authorization: `Bearer ${token}` } : {};
+  // ============================================================
+  // FORGOT PASSWORD — dir 6-digit code email-ka
+  // ============================================================
+  forgotPassword: async (Email) => {
+    const res = await axios.post(`${API_URL}/forgot-password`, { Email });
+    return res.data;
   },
 
-  // ---------- USERS (Admin) ----------
-  getUsers: async () => {
-    const res = await axios.get(`${API_URL}/users`, {
-      headers: authService.authHeader(),
+  // ============================================================
+  // VERIFY CODE — hubi 6-digit code, soo celi resetToken
+  // ============================================================
+  verifyCode: async (Email, Code) => {
+    const res = await axios.post(`${API_URL}/verify-code`, { Email, Code });
+    return res.data; // { message, resetToken }
+  },
+
+  // ============================================================
+  // RESET PASSWORD — beddel password-ka resetToken-ka
+  // ============================================================
+  resetPassword: async (resetToken, newPassword) => {
+    const res = await axios.post(`${API_URL}/reset-password`, {
+      resetToken,
+      newPassword,
     });
+    return res.data;
+  },
+
+  // ===== CHANGE MY PASSWORD =====
+  changeMyPassword: async (data) => {
+    const token = authService.getToken();
+    const res = await axios.put(`${API_URL}/change-password`, data, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return res.data;
+  },
+
+  // ===== ADMIN — USERS =====
+  getUsers: async () => {
+    const token = authService.getToken();
+    const res = await axios.get(`${API_URL}/users`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return res.data;
+  },
+
+  adminSetPassword: async (id, newPassword) => {
+    const token = authService.getToken();
+    const res = await axios.put(
+      `${API_URL}/users/${id}/password`,
+      { newPassword },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
     return res.data;
   },
 
   remove: async (id) => {
+    const token = authService.getToken();
     const res = await axios.delete(`${API_URL}/users/${id}`, {
-      headers: authService.authHeader(),
+      headers: { Authorization: `Bearer ${token}` },
     });
-    return res.data;
-  },
-
-  // ---------- CHANGE PASSWORD ----------
-  changeMyPassword: async (data) => {
-    const res = await axios.post(`${API_URL}/change-password`, data, {
-      headers: authService.authHeader(),
-    });
-    return res.data;
-  },
-
-  // Optional: admin resets another user's password
-  resetUserPassword: async (id, data) => {
-    const res = await axios.post(
-      `${API_URL}/users/${id}/reset-password`,
-      data,
-      { headers: authService.authHeader() }
-    );
     return res.data;
   },
 };

@@ -1,7 +1,39 @@
 const db = require('../config/db');
-const EXCHANGE_RATE = 11500;
 
+// ============================================================
+// CASH METHODS — CASE-INSENSITIVE
+// ============================================================
+const CASH_METHODS_LOWER = ['zaad kaash', 'kaash', 'e-dahab kaash'];
+
+const isCashMethod = (method) => {
+  if (!method) return false;
+  return CASH_METHODS_LOWER.includes(String(method).trim().toLowerCase());
+};
+
+// ============================================================
+// HELPER — Soo hel rate-ka (fallback maanta)
+// ============================================================
+async function getExchangeRate(forDate) {
+  const [rows] = await db.query(
+    `SELECT rate FROM Exchange_Rates 
+     WHERE rate_date <= ? 
+     ORDER BY rate_date DESC 
+     LIMIT 1`,
+    [forDate]
+  );
+  if (rows.length > 0) return Number(rows[0].rate);
+
+  const [latest] = await db.query(
+    `SELECT rate FROM Exchange_Rates 
+     ORDER BY rate_date DESC 
+     LIMIT 1`
+  );
+  return latest.length > 0 ? Number(latest[0].rate) : null;
+}
+
+// ============================================================
 // 1. GET ALL PAYMENTS
+// ============================================================
 exports.getAllPayments = async (req, res) => {
   try {
     const [rows] = await db.query(`
@@ -22,11 +54,15 @@ exports.getAllPayments = async (req, res) => {
       ORDER BY p.payment_id DESC
     `);
 
-    const result = rows.map((row) => ({
-      ...row,
-      amount_sos: (Number(row.amount || 0) * EXCHANGE_RATE).toLocaleString(),
-      balance_sos: (Number(row.payment_balance || 0) * EXCHANGE_RATE).toLocaleString(),
-    }));
+    const result = rows.map((row) => {
+      const paidAmt = Number(row.paid_amount) || 0;
+      const isCash = row.paid_currency === 'SLSH';
+
+      return {
+        ...row,
+        amount_sos: isCash && paidAmt > 0 ? paidAmt.toLocaleString() : null,
+      };
+    });
 
     res.json(result);
   } catch (error) {
@@ -35,7 +71,9 @@ exports.getAllPayments = async (req, res) => {
   }
 };
 
-// 2. GET ONE PAYMENT (Receipt)
+// ============================================================
+// 2. GET ONE PAYMENT
+// ============================================================
 exports.getPaymentById = async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -73,19 +111,16 @@ exports.getPaymentById = async (req, res) => {
       return res.status(404).json({ message: 'Payment not found' });
     }
 
-    const row = rows[0];
-    res.json({
-      ...row,
-      amount_sos: (Number(row.amount || 0) * EXCHANGE_RATE).toLocaleString(),
-      balance_sos: (Number(row.payment_balance || 0) * EXCHANGE_RATE).toLocaleString(),
-    });
+    res.json(rows[0]);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: error.message });
   }
 };
 
-// 3. GET ORDERS FOR DROPDOWN (remaining > 0 only)
+// ============================================================
+// 3. GET ORDERS FOR DROPDOWN
+// ============================================================
 exports.getOrdersForPayment = async (req, res) => {
   try {
     const [orders] = await db.query(`
@@ -138,7 +173,9 @@ exports.getOrdersForPayment = async (req, res) => {
   }
 };
 
+// ============================================================
 // 4. GET SALES REPORT
+// ============================================================
 exports.getSalesReport = async (req, res) => {
   try {
     const { filterType } = req.query;
@@ -172,14 +209,16 @@ exports.getSalesReport = async (req, res) => {
   }
 };
 
+// ============================================================
 // 5. CREATE PAYMENT
+// ============================================================
 exports.createPayment = async (req, res) => {
   try {
     const { order_id, amount, payment_method, payment_date } = req.body;
 
     if (!order_id || amount === undefined || amount === null || !payment_method) {
       return res.status(400).json({
-        message: 'order_id, amount and payment_method are required',
+        message: 'order_id, amount iyo payment_method waa qasab',
       });
     }
 
@@ -209,29 +248,66 @@ exports.createPayment = async (req, res) => {
 
     if (remaining <= 0.01) {
       return res.status(400).json({
-        message: 'Order-kan waa la bixiyey (PAID). Lama qaadan karo lacag kale.',
+        message: 'Order-kan waa la bixiyey (PAID).',
       });
     }
 
-    if (payAmount > remaining + 0.01) {
-      return res.status(400).json({
-        message: `Lacagtu way ka badan tahay remaining. Max: $${remaining.toFixed(2)}`,
-      });
-    }
-
-    const payment_balance = Math.max(0, remaining - payAmount);
     const date = payment_date || new Date().toISOString().slice(0, 10);
 
+    // SARIF LOGIC
+    const isCash = isCashMethod(payment_method);
+    let usdAmount;
+    let paidCurrency;
+    let rateUsed = null;
+
+    if (isCash) {
+      const rate = await getExchangeRate(date);
+      if (!rate || rate <= 0) {
+        return res.status(400).json({
+          message: 'Ma jiro sarif. Fadlan marka hore dhigo sarifka.',
+        });
+      }
+      usdAmount = payAmount / rate;
+      paidCurrency = 'SLSH';
+      rateUsed = rate;
+    } else {
+      usdAmount = payAmount;
+      paidCurrency = 'USD';
+    }
+
+    if (usdAmount > remaining + 0.01) {
+      const maxMsg =
+        isCash && rateUsed
+          ? ` | Max SLSH: ${Math.round(remaining * rateUsed).toLocaleString()}`
+          : '';
+      return res.status(400).json({
+        message: `Lacagtu way ka badan tahay remaining. Max: $${remaining.toFixed(2)}${maxMsg}`,
+      });
+    }
+
+    const payment_balance = Math.max(0, remaining - usdAmount);
+
     const [result] = await db.query(
-      `INSERT INTO Payments (order_id, payment_date, amount, payment_method, payment_balance)
-       VALUES (?, ?, ?, ?, ?)`,
-      [order_id, date, payAmount, payment_method, payment_balance]
+      `INSERT INTO Payments 
+        (order_id, payment_date, amount, paid_amount, paid_currency, exchange_rate_used, payment_method, payment_balance)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        order_id,
+        date,
+        usdAmount,
+        payAmount,
+        paidCurrency,
+        rateUsed,
+        payment_method,
+        payment_balance,
+      ]
     );
 
     res.status(201).json({
       message: 'Payment recorded successfully',
       id: result.insertId,
       payment_balance,
+      exchange_rate_used: rateUsed,
     });
   } catch (error) {
     console.error(error);
@@ -239,7 +315,9 @@ exports.createPayment = async (req, res) => {
   }
 };
 
+// ============================================================
 // 6. UPDATE PAYMENT
+// ============================================================
 exports.updatePayment = async (req, res) => {
   try {
     const { amount, payment_method, payment_date } = req.body;
@@ -255,16 +333,19 @@ exports.updatePayment = async (req, res) => {
     }
 
     const current = currentRows[0];
+
     const payAmount =
       amount !== undefined && amount !== null
         ? Number(amount)
-        : Number(current.amount);
+        : Number(current.paid_amount || current.amount);
 
     if (isNaN(payAmount) || payAmount <= 0) {
       return res.status(400).json({ message: 'Amount must be greater than 0' });
     }
 
     const order_id = current.order_id;
+    const method = payment_method || current.payment_method;
+    const date = payment_date || current.payment_date;
 
     const [orderRows] = await db.query(
       'SELECT O_Total FROM Orders WHERE O_id = ?',
@@ -287,25 +368,69 @@ exports.updatePayment = async (req, res) => {
     const totalPaidOthers = Number(paidRows[0].total_paid) || 0;
     const maxAllowed = orderTotal - totalPaidOthers;
 
-    if (payAmount > maxAllowed + 0.01) {
+    // SARIF LOGIC — isticmaal rate-kii hore haddii jiro
+    const isCash = isCashMethod(method);
+    let usdAmount;
+    let paidCurrency;
+    let rateUsed = null;
+
+    if (isCash) {
+      let rate = Number(current.exchange_rate_used) || null;
+
+      if (!rate || rate <= 0) {
+        rate = await getExchangeRate(date);
+      }
+
+      if (!rate || rate <= 0) {
+        rate = await getExchangeRate(new Date().toISOString().slice(0, 10));
+      }
+
+      if (!rate || rate <= 0) {
+        return res.status(400).json({
+          message: 'Ma jiro sarif la heli karo. Fadlan sarifka dhigo.',
+        });
+      }
+
+      usdAmount = payAmount / rate;
+      paidCurrency = 'SLSH';
+      rateUsed = rate;
+    } else {
+      usdAmount = payAmount;
+      paidCurrency = 'USD';
+    }
+
+    if (usdAmount > maxAllowed + 0.01) {
+      const maxMsg =
+        isCash && rateUsed
+          ? ` | Max SLSH: ${Math.round(maxAllowed * rateUsed).toLocaleString()}`
+          : '';
       return res.status(400).json({
-        message: `Exceeds remaining. Max: $${maxAllowed.toFixed(2)}`,
+        message: `Exceeds remaining. Max: $${maxAllowed.toFixed(2)}${maxMsg}`,
       });
     }
 
-    const payment_balance = Math.max(0, orderTotal - (totalPaidOthers + payAmount));
+    const payment_balance = Math.max(
+      0,
+      orderTotal - (totalPaidOthers + usdAmount)
+    );
 
     await db.query(
       `UPDATE Payments SET
         amount = ?,
+        paid_amount = ?,
+        paid_currency = ?,
+        exchange_rate_used = ?,
         payment_method = ?,
         payment_date = ?,
         payment_balance = ?
        WHERE payment_id = ?`,
       [
+        usdAmount,
         payAmount,
-        payment_method || current.payment_method,
-        payment_date || current.payment_date,
+        paidCurrency,
+        rateUsed,
+        method,
+        date,
         payment_balance,
         payment_id,
       ]
@@ -318,17 +443,24 @@ exports.updatePayment = async (req, res) => {
   }
 };
 
-// 7. PAY BALANCE
+// ============================================================
+// 7. PAY BALANCE — ROBUST (NaN/Null safe)
+// ============================================================
 exports.payBalance = async (req, res) => {
   try {
     const { amount_paid, payment_method } = req.body;
-    const payAmount = Number(amount_paid);
 
-    if (!payment_method) {
-      return res.status(400).json({ message: 'Payment method is required' });
+    if (!amount_paid || !payment_method) {
+      return res.status(400).json({
+        message: 'amount_paid iyo payment_method waa qasab',
+      });
     }
+
+    const payAmount = Number(amount_paid);
     if (isNaN(payAmount) || payAmount <= 0) {
-      return res.status(400).json({ message: 'Amount must be greater than 0' });
+      return res.status(400).json({
+        message: 'Amount must be greater than 0',
+      });
     }
 
     const [rows] = await db.query(
@@ -341,7 +473,23 @@ exports.payBalance = async (req, res) => {
     }
 
     const payment = rows[0];
-    const balance = Number(payment.payment_balance) || 0;
+
+    // SAFE PARSING — NULL/undefined safe
+    const balance = parseFloat(payment.payment_balance) || 0;
+    const currentAmount = parseFloat(payment.amount) || 0;
+    const currentPaidAmount =
+      payment.paid_amount !== null && payment.paid_amount !== undefined
+        ? parseFloat(payment.paid_amount) || currentAmount
+        : currentAmount;
+
+    console.log('💰 payBalance INPUT:', {
+      payment_id: req.params.id,
+      balance,
+      currentAmount,
+      currentPaidAmount,
+      payAmount,
+      payment_method,
+    });
 
     if (balance <= 0.01) {
       return res.status(400).json({
@@ -349,27 +497,68 @@ exports.payBalance = async (req, res) => {
       });
     }
 
-    if (payAmount > balance + 0.01) {
+    const today = new Date().toISOString().slice(0, 10);
+
+    // SARIF LOGIC
+    const isCash = isCashMethod(payment_method);
+    let usdAmount;
+    let rateUsed = null;
+    let paidCurrency = 'USD';
+
+    if (isCash) {
+      const rate = await getExchangeRate(today);
+      if (!rate || rate <= 0) {
+        return res.status(400).json({
+          message: 'Ma jiro sarif maanta. Fadlan sarifka dhigo.',
+        });
+      }
+      usdAmount = payAmount / rate;
+      rateUsed = rate;
+      paidCurrency = 'SLSH';
+    } else {
+      usdAmount = payAmount;
+    }
+
+    if (usdAmount > balance + 0.01) {
+      const maxMsg =
+        isCash && rateUsed
+          ? ` | Max SLSH: ${Math.round(balance * rateUsed).toLocaleString()}`
+          : '';
       return res.status(400).json({
-        message: `Cannot exceed balance ($${balance.toFixed(2)})`,
+        message: `Cannot exceed balance ($${balance.toFixed(2)})${maxMsg}`,
       });
     }
 
-    const newAmount = Number(payment.amount) + payAmount;
-    const newBalance = Math.max(0, balance - payAmount);
+    const newAmount = currentAmount + usdAmount;
+    const newPaidAmount = currentPaidAmount + payAmount;
+    const newBalance = Math.max(0, balance - usdAmount);
+
+    console.log('💰 payBalance OUTPUT:', {
+      newAmount,
+      newPaidAmount,
+      newBalance,
+      paidCurrency,
+      rateUsed,
+    });
 
     await db.query(
       `UPDATE Payments SET
         amount = ?,
+        paid_amount = ?,
+        paid_currency = ?,
+        exchange_rate_used = ?,
         payment_balance = ?,
         payment_method = ?,
         payment_date = ?
        WHERE payment_id = ?`,
       [
         newAmount,
+        newPaidAmount,
+        paidCurrency,
+        rateUsed,
         newBalance,
         payment_method,
-        new Date().toISOString().slice(0, 10),
+        today,
         req.params.id,
       ]
     );
@@ -379,12 +568,17 @@ exports.payBalance = async (req, res) => {
       payment_balance: newBalance,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: error.message });
+    console.error('❌ payBalance ERROR:', error);
+    res.status(500).json({
+      message: error.message || 'Khalad ayaa dhacay backend-ka',
+      code: error.code || null,
+    });
   }
 };
 
+// ============================================================
 // 8. DELETE PAYMENT
+// ============================================================
 exports.deletePayment = async (req, res) => {
   try {
     const [result] = await db.query(

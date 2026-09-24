@@ -3,6 +3,9 @@ import { ProtectedRoute, AdminRoute } from './components/ProtectedRoute';
 
 import Login from './pages/Login';
 import Register from './pages/Users/Register';
+import ForgotPassword from './pages/ForgotPassword';
+import VerifyCode from './pages/VerifyCode';
+import ResetPassword from './pages/ResetPassword';
 import UsersList from './pages/Users/UsersList';
 import ChangePassword from './pages/Users/ChangePassword';
 
@@ -49,13 +52,19 @@ import FabricInventoryList from './pages/Fabric/FabricInventoryList';
 import FabricInventoryAdd from './pages/Fabric/FabricInventoryAdd';
 import FabricInventoryEdit from './pages/Fabric/FabricInventoryEdit';
 
+// ========== EXCHANGE RATE (SARIF) ==========
+import ExchangeRate from './pages/ExchangeRate/ExchangeRate';
+
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* ========== PUBLIC ========== */}
+        {/* ========== PUBLIC — AUTH ========== */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/verify-code" element={<VerifyCode />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* ========== DASHBOARD ========== */}
         <Route
@@ -245,6 +254,16 @@ function App() {
           }
         />
 
+        {/* ========== EXCHANGE RATE (SARIF) — Admin kaliya ========== */}
+        <Route
+          path="/exchange-rate"
+          element={
+            <AdminRoute>
+              <ExchangeRate />
+            </AdminRoute>
+          }
+        />
+
         {/* ========== EMPLOYEE — Admin ========== */}
         <Route
           path="/employee"
@@ -359,7 +378,7 @@ function App() {
           }
         />
 
-        {/* Unknown URL → home (ProtectedRoute → login haddii aan la gelin) */}
+        {/* Unknown URL → home */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

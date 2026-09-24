@@ -18,6 +18,9 @@ const authRoutes = require('./routes/authRoutes');
 const fabricRoutes = require('./routes/fabricRoutes');
 const fabricInventoryRoutes = require('./routes/fabricInventoryRoutes');
 
+// ========== EXCHANGE RATE (SARIF) ==========
+const exchangeRateRoutes = require('./routes/exchangeRateRoutes');
+
 const app = express();
 
 app.use(cors());
@@ -41,6 +44,9 @@ app.use('/api/fabric', fabricRoutes);
 
 // Inventory cusub (Code + Color + Waar)
 app.use('/api/fabric-inventory', fabricInventoryRoutes);
+
+// ========== EXCHANGE RATE (SARIF) ==========
+app.use('/api/exchange-rates', exchangeRateRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'Carwo Furniture Backend is running' });

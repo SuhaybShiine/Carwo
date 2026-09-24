@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import paymentService from '../../services/paymentService';
 
-const EXCHANGE_RATE = 11500;
 const NAVY = '#1a2744';
 const GOLD = '#c5a059';
 
@@ -63,14 +62,19 @@ function PaymentReceipt() {
   const balance = Number(payment.payment_balance) || 0;
   const status = isPaid ? 'PAID' : 'BALANCE DUE';
 
+  // ============================================================
+  // SARIF — Rate-ka la isticmaalay
+  // ============================================================
+  const rate = Number(payment.exchange_rate_used) || 0;
+  const paidAmount = Number(payment.paid_amount) || amount;
+  const paidCurrency = payment.paid_currency || 'USD';
+  const isCash = paidCurrency === 'SLSH' && rate > 0;
+
   return (
     <div style={s.page} className="receipt-page">
       <style>{`
         @media print {
-          @page {
-            size: A4;
-            margin: 12mm;
-          }
+          @page { size: A4; margin: 12mm; }
           html, body {
             background: #fff !important;
             margin: 0 !important;
@@ -78,9 +82,7 @@ function PaymentReceipt() {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          .no-print {
-            display: none !important;
-          }
+          .no-print { display: none !important; }
           .receipt-page {
             background: #fff !important;
             padding: 0 !important;
@@ -95,7 +97,6 @@ function PaymentReceipt() {
         }
       `}</style>
 
-      {/* ===== RECEIPT PAPER ONLY ===== */}
       <div className="receipt-paper" style={s.paper}>
         <div style={s.cornerTL} />
         <div style={s.cornerTR} />
@@ -136,13 +137,21 @@ function PaymentReceipt() {
           />
           <MetaRow label="CUSTOMER:" value={payment.C_Name || 'N/A'} />
           <MetaRow label="METHOD:" value={payment.payment_method || '-'} />
+
+          {/* SARIF ROW */}
+          {rate > 0 && (
+            <MetaRow
+              label="EXCHANGE RATE:"
+              value={`1$ = ${rate.toLocaleString()} SLSH`}
+            />
+          )}
+
           {payment.O_AppointmentDate && (
             <MetaRow
               label="APPOINTMENT:"
               value={String(payment.O_AppointmentDate).slice(0, 10)}
             />
           )}
-          {/* ugu dambeeya */}
           <MetaRow label="SERVED BY:" value={payment.E_Name || 'N/A'} />
         </div>
 
@@ -177,6 +186,17 @@ function PaymentReceipt() {
             <span>Order Total</span>
             <span>${orderTotal.toFixed(2)}</span>
           </div>
+
+          {/* HADDII SLSH */}
+          {isCash && (
+            <div style={s.totalLine}>
+              <span>Paid in SLSH</span>
+              <span>
+                {paidAmount.toLocaleString()} SLSH
+              </span>
+            </div>
+          )}
+
           <div style={s.totalLine}>
             <span>Paid (this receipt)</span>
             <span>${amount.toFixed(2)}</span>
@@ -209,11 +229,15 @@ function PaymentReceipt() {
               {isPaid ? 'PAID' : `$${balance.toFixed(2)}`}
             </span>
           </div>
-          <p style={s.balanceSos}>
-            {isPaid
-              ? `Amount SLS: ${(amount * EXCHANGE_RATE).toLocaleString()} SLS`
-              : `Balance SLS: ${(balance * EXCHANGE_RATE).toLocaleString()} SLS`}
-          </p>
+
+          {/* SARIF BALANCE */}
+          {rate > 0 && (
+            <p style={s.balanceSos}>
+              {isPaid
+                ? `Amount SLS: ${(amount * rate).toLocaleString()} SLS`
+                : `Balance SLS: ${(balance * rate).toLocaleString()} SLS`}
+            </p>
+          )}
         </div>
 
         <div style={s.goldLine} />
@@ -225,7 +249,6 @@ function PaymentReceipt() {
         <div style={s.cornerBR} />
       </div>
 
-      {/* Buttons — MA PRINT-GAREEYO */}
       <div className="no-print" style={s.actions}>
         <button
           type="button"
@@ -321,11 +344,7 @@ const s = {
     borderBottomRightRadius: 4,
     boxShadow: `inset -3px -3px 0 ${GOLD}`,
   },
-  brandBlock: {
-    textAlign: 'center',
-    marginBottom: 14,
-    paddingTop: 8,
-  },
+  brandBlock: { textAlign: 'center', marginBottom: 14, paddingTop: 8 },
   logoWrap: {
     width: 52,
     height: 52,
@@ -337,12 +356,7 @@ const s = {
     justifyContent: 'center',
     background: '#fff',
   },
-  brandTitle: {
-    margin: 0,
-    fontSize: 28,
-    fontWeight: 800,
-    color: NAVY,
-  },
+  brandTitle: { margin: 0, fontSize: 28, fontWeight: 800, color: NAVY },
   brandCity: {
     margin: '4px 0 0',
     fontSize: 11,
@@ -371,13 +385,8 @@ const s = {
     background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`,
     margin: '10px 0 14px',
   },
-  metaBlock: {
-    marginBottom: 8,
-  },
-  dashLine: {
-    borderTop: '1.5px dashed #cbd5e1',
-    margin: '12px 0',
-  },
+  metaBlock: { marginBottom: 8 },
+  dashLine: { borderTop: '1.5px dashed #cbd5e1', margin: '12px 0' },
   itemsHead: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -390,9 +399,7 @@ const s = {
     letterSpacing: 1,
     marginBottom: 4,
   },
-  itemsBody: {
-    padding: '4px 0',
-  },
+  itemsBody: { padding: '4px 0' },
   itemRow: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -401,9 +408,7 @@ const s = {
     color: NAVY,
     borderBottom: '1px solid #f1f5f9',
   },
-  totalRows: {
-    padding: '4px 6px',
-  },
+  totalRows: { padding: '4px 6px' },
   totalLine: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -424,10 +429,7 @@ const s = {
     letterSpacing: 1,
     marginTop: 8,
   },
-  balanceBlock: {
-    marginTop: 14,
-    padding: '0 4px',
-  },
+  balanceBlock: { marginTop: 14, padding: '0 4px' },
   balanceRow: {
     display: 'flex',
     justifyContent: 'space-between',

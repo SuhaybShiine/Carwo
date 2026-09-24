@@ -1,10 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import paymentService from '../../services/paymentService';
+import exchangeRateService from '../../services/exchangeRateService';
 import Sidebar from '../../components/Sidebar';
 import '../Employee/Employee.css';
 
-const EXCHANGE_RATE = 11500;
+// ============================================================
+// PAYMENT METHODS
+// ============================================================
+const CASH_METHODS = ['Zaad Kaash', 'Kaash', 'E-Dahab Kaash'];
+const DOLLAR_METHODS = ['Zaad Dollor', 'Dollor', 'E-Dahab Dollor', 'Card'];
+
+const isCashMethod = (m) => CASH_METHODS.includes(m);
+const isDollarMethod = (m) => DOLLAR_METHODS.includes(m);
 
 function PaymentAdd() {
   const navigate = useNavigate();
@@ -15,28 +23,81 @@ function PaymentAdd() {
   const [touched, setTouched] = useState({});
   const [selectedOrder, setSelectedOrder] = useState(null);
 
+  // SARIF
+  const [todayRate, setTodayRate] = useState(null);
+  const [isCash, setIsCash] = useState(false);
+  const [isDollar, setIsDollar] = useState(false);
+
+  // ── LABA FIELD OO GOONI AH ──
+  const [amountDollar, setAmountDollar] = useState(''); // USD
+  const [amountCash, setAmountCash] = useState('');     // SLSH
+
   const [form, setForm] = useState({
     order_id: '',
-    amount: '',
     payment_method: '',
     payment_date: new Date().toISOString().slice(0, 10),
   });
 
+  // ============================================================
+  // FETCH
+  // ============================================================
   useEffect(() => {
-    const fetchOrders = async () => {
+    const fetchData = async () => {
       try {
-        const data = await paymentService.getOrdersList();
-        // Backend already filters PAID orders (remaining > 0)
-        setOrders(Array.isArray(data) ? data : []);
+        const [ordersData, rateData] = await Promise.all([
+          paymentService.getOrdersList(),
+          exchangeRateService.getToday(),
+        ]);
+        setOrders(Array.isArray(ordersData) ? ordersData : []);
+        setTodayRate(rateData?.rate ? Number(rateData.rate) : null);
       } catch (error) {
         console.error(error);
-        alert('Wuu ku guuldareystay inuu soo akhriyo Orders-ka');
+        alert('Wuu ku guuldareystay inuu soo akhriyo xogta');
       }
     };
-    fetchOrders();
+    fetchData();
   }, []);
 
-  const validateField = (name, value, order = selectedOrder) => {
+  // ============================================================
+  // AUTO-FILL LOGIC
+  // ============================================================
+  const autoFillAmounts = (order, method, rate) => {
+    if (!order || !method) {
+      setAmountDollar('');
+      setAmountCash('');
+      return;
+    }
+
+    const remaining = Number(order.remaining) || 0;
+
+    if (isCashMethod(method)) {
+      // Kaash → SLSH
+      if (rate && rate > 0) {
+        setAmountCash(Math.round(remaining * rate).toString());
+      } else {
+        setAmountCash('');
+      }
+      setAmountDollar('');
+    } else if (isDollarMethod(method)) {
+      // Dollar → USD
+      setAmountDollar(remaining.toFixed(2));
+      setAmountCash('');
+    } else {
+      setAmountDollar('');
+      setAmountCash('');
+    }
+  };
+
+  // ============================================================
+  // VALIDATION
+  // ============================================================
+  const getActiveAmount = () => {
+    if (isCash) return amountCash;
+    if (isDollar) return amountDollar;
+    return '';
+  };
+
+  const validateField = (name, value, order = selectedOrder, cash = isCash, dollar = isDollar) => {
     switch (name) {
       case 'order_id':
         if (!value) return 'Fadlan dooro Order';
@@ -44,31 +105,51 @@ function PaymentAdd() {
           return 'Order-kan waa PAID. Lama qaadan karo lacag kale';
         }
         return '';
+
       case 'amount': {
         if (value === '' || value === null) return 'Lacagta waa qasab';
         const num = Number(value);
         if (isNaN(num)) return 'Geli number sax ah';
         if (num <= 0) return 'Lacagtu waa inay ka badan tahay 0';
-        if (order && num > Number(order.remaining) + 0.01) {
-          return `Kama badnaan karto remaining ($${Number(order.remaining).toFixed(2)})`;
+
+        let usdNum = num;
+        if (cash) {
+          if (!todayRate) {
+            return 'Ma jiro sarif maanta. Fadlan marka hore dhigo sarifka.';
+          }
+          usdNum = num / todayRate;
+        }
+
+        if (order && usdNum > Number(order.remaining) + 0.01) {
+          const max =
+            cash && todayRate
+              ? ` Max SLSH: ${(
+                  Number(order.remaining) * todayRate
+                ).toLocaleString()}`
+              : '';
+          return `Kama badnaan karto remaining ($${Number(order.remaining).toFixed(2)})${max}`;
         }
         return '';
       }
+
       case 'payment_method':
         if (!value) return 'Dooro habka lacag-bixinta';
         return '';
+
       case 'payment_date':
         if (!value) return 'Taariikhda waa qasab';
         return '';
+
       default:
         return '';
     }
   };
 
   const validateAll = () => {
+    const activeAmount = getActiveAmount();
     const next = {
       order_id: validateField('order_id', form.order_id),
-      amount: validateField('amount', form.amount, selectedOrder),
+      amount: validateField('amount', activeAmount, selectedOrder, isCash, isDollar),
       payment_method: validateField('payment_method', form.payment_method),
       payment_date: validateField('payment_date', form.payment_date),
     };
@@ -82,37 +163,70 @@ function PaymentAdd() {
     return !Object.values(next).some((m) => m);
   };
 
+  // ============================================================
+  // HANDLERS
+  // ============================================================
   const handleOrderChange = (e) => {
     const id = e.target.value;
     const order = orders.find((o) => String(o.O_id) === String(id)) || null;
-    setForm({ ...form, order_id: id });
     setSelectedOrder(order);
+
+    // Auto-fill labada field
+    autoFillAmounts(order, form.payment_method, todayRate);
+
+    setForm({ ...form, order_id: id });
     setTouched({ ...touched, order_id: true });
     setErrors({
       ...errors,
-      order_id: validateField('order_id', id, order),
-      amount: form.amount ? validateField('amount', form.amount, order) : errors.amount,
+      order_id: validateField('order_id', id, order, isCash, isDollar),
+      amount: '',
     });
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm({ ...form, [name]: value });
-    if (touched[name]) {
+  const handleMethodChange = (e) => {
+    const method = e.target.value;
+    const cash = isCashMethod(method);
+    const dollar = isDollarMethod(method);
+
+    setIsCash(cash);
+    setIsDollar(dollar);
+    setForm({ ...form, payment_method: method });
+
+    // Auto-fill labada field
+    autoFillAmounts(selectedOrder, method, todayRate);
+
+    setErrors({ ...errors, payment_method: '', amount: '' });
+    setTouched({ ...touched, payment_method: true });
+  };
+
+  const handleDollarChange = (e) => {
+    setAmountDollar(e.target.value);
+    if (touched.amount) {
       setErrors({
         ...errors,
-        [name]: validateField(name, value, selectedOrder),
+        amount: validateField('amount', e.target.value, selectedOrder, false, true),
       });
     }
   };
 
-  const handleBlur = (e) => {
-    const { name, value } = e.target;
-    setTouched({ ...touched, [name]: true });
-    setErrors({
-      ...errors,
-      [name]: validateField(name, value, selectedOrder),
-    });
+  const handleCashChange = (e) => {
+    setAmountCash(e.target.value);
+    if (touched.amount) {
+      setErrors({
+        ...errors,
+        amount: validateField('amount', e.target.value, selectedOrder, true, false),
+      });
+    }
+  };
+
+  const handleDateChange = (e) => {
+    setForm({ ...form, payment_date: e.target.value });
+    if (touched.payment_date) {
+      setErrors({
+        ...errors,
+        payment_date: validateField('payment_date', e.target.value),
+      });
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -124,11 +238,18 @@ function PaymentAdd() {
       return;
     }
 
+    if (isCash && !todayRate) {
+      alert('Ma jiro sarif maanta. Fadlan marka hore dhigo sarifka.');
+      return;
+    }
+
+    const activeAmount = getActiveAmount();
+
     setLoading(true);
     try {
       await paymentService.create({
         order_id: form.order_id,
-        amount: Number(form.amount),
+        amount: Number(activeAmount),
         payment_method: form.payment_method,
         payment_date: form.payment_date,
       });
@@ -149,6 +270,15 @@ function PaymentAdd() {
         : undefined,
   });
 
+  // Preview
+  const usdPreview =
+    isCash && amountCash && todayRate
+      ? (Number(amountCash) / todayRate).toFixed(2)
+      : null;
+
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <div className="layout">
       <Sidebar collapsed={collapsed} />
@@ -168,18 +298,66 @@ function PaymentAdd() {
         </header>
 
         <div className="content">
-          <div className="form-card" style={{ maxWidth: 800, margin: '0 auto' }}>
+          <div className="form-card" style={{ maxWidth: 820, margin: '0 auto' }}>
+
+            {/* SARIF BANNER */}
+            <div
+              style={{
+                background: todayRate
+                  ? 'linear-gradient(135deg, #0f291e, #1b4332)'
+                  : 'linear-gradient(135deg, #7f1d1d, #991b1b)',
+                color: '#fff',
+                padding: '14px 20px',
+                borderRadius: 10,
+                marginBottom: 20,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 10,
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    letterSpacing: 1,
+                    opacity: 0.85,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Today's Exchange Rate
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4 }}>
+                  {todayRate
+                    ? `1 USD = ${todayRate.toLocaleString()} SLSH`
+                    : '⚠ No rate set for today'}
+                </div>
+              </div>
+              <Link
+                to="/exchange-rate"
+                style={{
+                  color: '#fff',
+                  textDecoration: 'underline',
+                  fontWeight: 600,
+                  fontSize: 13,
+                }}
+              >
+                <i className="bi bi-pencil-square"></i>{' '}
+                {todayRate ? 'Update' : 'Set Rate'}
+              </Link>
+            </div>
+
             <form onSubmit={handleSubmit} noValidate>
               <div className="form-grid">
+
+                {/* SELECT ORDER */}
                 <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label>
-                    Select Order <span style={{ color: '#ef4444' }}></span>
-                  </label>
+                  <label>Select Order</label>
                   <select
                     name="order_id"
                     value={form.order_id}
                     onChange={handleOrderChange}
-                    onBlur={handleBlur}
                     className="form-control"
                     style={fieldStyle('order_id')}
                   >
@@ -202,6 +380,7 @@ function PaymentAdd() {
                   )}
                 </div>
 
+                {/* ORDER INFO */}
                 {selectedOrder && (
                   <div
                     className="form-group"
@@ -235,61 +414,200 @@ function PaymentAdd() {
                         <span style={{ color: '#dc2626', fontWeight: 700 }}>
                           ${Number(selectedOrder.remaining || 0).toFixed(2)}
                         </span>
+                        {todayRate && (
+                          <span
+                            style={{
+                              color: '#64748b',
+                              marginLeft: 6,
+                              fontSize: 13,
+                            }}
+                          >
+                            (≈{' '}
+                            {(
+                              Number(selectedOrder.remaining) * todayRate
+                            ).toLocaleString()}{' '}
+                            SLSH)
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
                 )}
 
-                <div className="form-group">
-                  <label>
-                    Amount to Pay ($) <span style={{ color: '#ef4444' }}></span>
-                  </label>
-                  <input
-                    type="number"
-                    name="amount"
-                    step="0.01"
-                    min="0.01"
-                    placeholder="Enter amount"
-                    value={form.amount}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    className="form-control"
-                    style={fieldStyle('amount')}
-                  />
-                  {form.amount && !errors.amount && (
-                    <small style={{ color: '#2563eb', fontWeight: 600 }}>
-                      ≈ {(Number(form.amount) * EXCHANGE_RATE).toLocaleString()} SOS
-                    </small>
-                  )}
-                  {touched.amount && errors.amount && (
-                    <ErrorMsg text={errors.amount} />
-                  )}
-                </div>
-
-                <div className="form-group">
+                {/* PAYMENT METHOD */}
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
                   <label>
                     Payment Method <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <select
                     name="payment_method"
                     value={form.payment_method}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
+                    onChange={handleMethodChange}
                     className="form-control"
                     style={fieldStyle('payment_method')}
                   >
                     <option value="">-- Choose Method --</option>
-                    <option value="ZAAD Kaash">ZAAD Kaash</option>
-                    <option value="ZAAD Dollor">ZAAD Dollor</option>
-                    <option value="E-Dahab">E-Dahab</option>
-                    <option value="Cash">Cash</option>
+                    <optgroup label="💵 Cash (SLSH)">
+                      <option value="Zaad Kaash">Zaad Kaash (SLSH)</option>
+                      <option value="Kaash">Kaash (SLSH)</option>
+                      <option value="E-Dahab Kaash">E-Dahab Kaash (SLSH)</option>
+                    </optgroup>
+                    <optgroup label="💵 Dollar (USD)">
+                      <option value="Zaad Dollor">Zaad Dollor (USD)</option>
+                      <option value="Dollor">Dollor (USD)</option>
+                      <option value="E-Dahab Dollor">E-Dahab Dollor (USD)</option>
+                      <option value="Card">Card (USD)</option>
+                    </optgroup>
                   </select>
                   {touched.payment_method && errors.payment_method && (
                     <ErrorMsg text={errors.payment_method} />
                   )}
                 </div>
 
+                {/* ═══════════════════════════════════════════════
+                    LABA FIELD OO GOONI AH — Amount Dollar + Amount Cash
+                   ═══════════════════════════════════════════════ */}
+
+                {/* AMOUNT DOLLAR */}
                 <div className="form-group">
+                  <label
+                    style={{
+                      color: isDollar ? '#0f291e' : '#94a3b8',
+                      transition: 'color 0.2s',
+                    }}
+                  >
+                    <i className="bi bi-currency-dollar me-1"></i>
+                    Amount Dollar ($)
+                    {isDollar && (
+                      <span
+                        style={{
+                          marginLeft: 8,
+                          fontSize: 11,
+                          color: '#166534',
+                          background: '#dcfce7',
+                          padding: '2px 8px',
+                          borderRadius: 10,
+                          fontWeight: 600,
+                        }}
+                      >
+                        AUTO
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="number"
+                    name="amountDollar"
+                    step="0.01"
+                    min="0.01"
+                    placeholder={isDollar ? 'e.g. 45.00' : '— disabled —'}
+                    value={amountDollar}
+                    onChange={handleDollarChange}
+                    className="form-control"
+                    disabled={!isDollar}
+                    style={{
+                      background: isDollar ? '#fff' : '#f1f5f9',
+                      fontWeight: isDollar ? 700 : 400,
+                      color: isDollar ? '#0f291e' : '#94a3b8',
+                      borderColor: isDollar && errors.amount ? '#ef4444' : undefined,
+                    }}
+                  />
+                  {isDollar && amountDollar && (
+                    <small
+                      style={{
+                        color: '#2563eb',
+                        fontWeight: 600,
+                        display: 'block',
+                        marginTop: 4,
+                      }}
+                    >
+                      USD: ${Number(amountDollar).toFixed(2)}
+                    </small>
+                  )}
+                </div>
+
+                {/* AMOUNT CASH */}
+                <div className="form-group">
+                  <label
+                    style={{
+                      color: isCash ? '#92400e' : '#94a3b8',
+                      transition: 'color 0.2s',
+                    }}
+                  >
+                    <i className="bi bi-cash-stack me-1"></i>
+                    Amount Cash (SLSH)
+                    {isCash && (
+                      <span
+                        style={{
+                          marginLeft: 8,
+                          fontSize: 11,
+                          color: '#166534',
+                          background: '#dcfce7',
+                          padding: '2px 8px',
+                          borderRadius: 10,
+                          fontWeight: 600,
+                        }}
+                      >
+                        AUTO
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="number"
+                    name="amountCash"
+                    step="1"
+                    min="1"
+                    placeholder={isCash ? 'e.g. 532350' : '— disabled —'}
+                    value={amountCash}
+                    onChange={handleCashChange}
+                    className="form-control"
+                    disabled={!isCash}
+                    style={{
+                      background: isCash ? '#fff' : '#f1f5f9',
+                      fontWeight: isCash ? 700 : 400,
+                      color: isCash ? '#92400e' : '#94a3b8',
+                      borderColor: isCash && errors.amount ? '#ef4444' : undefined,
+                    }}
+                  />
+                  {usdPreview && (
+                    <small
+                      style={{
+                        color: '#2563eb',
+                        fontWeight: 600,
+                        display: 'block',
+                        marginTop: 4,
+                      }}
+                    >
+                      <i className="bi bi-arrow-left-right"></i>{' '}
+                      {Number(amountCash).toLocaleString()} SLSH ≈{' '}
+                      <b>${usdPreview}</b>{' '}
+                      <span style={{ color: '#64748b' }}>
+                        (1$ = {todayRate.toLocaleString()})
+                      </span>
+                    </small>
+                  )}
+                  {isCash && !todayRate && form.payment_method && (
+                    <small
+                      style={{
+                        color: '#dc2626',
+                        fontWeight: 600,
+                        display: 'block',
+                        marginTop: 4,
+                      }}
+                    >
+                      ⚠ Ma jiro sarif maanta — fadlan marka hore dhigo sarifka
+                    </small>
+                  )}
+                </div>
+
+                {/* ERROR ROW */}
+                {touched.amount && errors.amount && (
+                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <ErrorMsg text={errors.amount} />
+                  </div>
+                )}
+
+                {/* DATE */}
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
                   <label>
                     Payment Date <span style={{ color: '#ef4444' }}>*</span>
                   </label>
@@ -297,8 +615,7 @@ function PaymentAdd() {
                     type="date"
                     name="payment_date"
                     value={form.payment_date}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
+                    onChange={handleDateChange}
                     className="form-control"
                     style={fieldStyle('payment_date')}
                   />
